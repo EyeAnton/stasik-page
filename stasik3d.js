@@ -17,7 +17,7 @@ const KEYS = { w: 7.8, h: 5, y: -20.8, x: [-12, 0, 11.8] };
 const M = {
   body:  new THREE.MeshStandardMaterial({ color: 0x1e1f22, roughness: 0.55 }),
   bat:   new THREE.MeshStandardMaterial({ color: 0x151618, roughness: 0.7 }),
-  glass: new THREE.MeshPhysicalMaterial({ color: 0x060608, roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 0.22 }),
+  glass: new THREE.MeshStandardMaterial({ color: 0x030304, roughness: 0.12, envMapIntensity: 0.35 }),
   key:   new THREE.MeshStandardMaterial({ color: 0xc8c9cc, roughness: 0.35, metalness: 0.25 }),
   red:   new THREE.MeshStandardMaterial({ color: 0xd0312b, roughness: 0.45 }),
   metal: new THREE.MeshStandardMaterial({ color: 0xa4a6aa, roughness: 0.3, metalness: 0.9 }),
@@ -25,7 +25,7 @@ const M = {
   rubber:new THREE.MeshStandardMaterial({ color: 0x101012, roughness: 0.9 }),
   // блик стекла поверх экрана: чёрный + аддитивное смешивание = только отражения
   sheen: new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.08, transparent: true,
-           blending: THREE.AdditiveBlending, depthWrite: false, envMapIntensity: 0.25 }),
+           blending: THREE.AdditiveBlending, depthWrite: false, envMapIntensity: 0.12 }),
 };
 
 // ---------- Геометрия ----------
@@ -88,7 +88,8 @@ export function buildStasik(screenTexture) {
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN.w, SCREEN.h), screenMat);
   screen.position.set(0, SCREEN.y, H + 0.06);
   screen.name = 'screen';
-  const sheen = new THREE.Mesh(new THREE.PlaneGeometry(W - 3, W - 3), M.sheen);
+  // блик повторяет скругление стекла — иначе его углы торчат за контур
+  const sheen = new THREE.Mesh(new THREE.ShapeGeometry(rrect(W - 2.8, W - 2.8, 3.6), 20), M.sheen);
   sheen.position.z = H + 0.08;
   sheen.name = 'sheen';  // только для браузера: в glTF нет аддитивного смешивания
   dev.add(glass, screen, sheen);
@@ -246,35 +247,63 @@ export function mount({ canvas, emuFrame, onReady }) {
   });
   canvas.addEventListener('pointermove', (e) => { if (!e.buttons) canvas.style.cursor = pick(e) >= 0 ? 'pointer' : 'grab'; });
 
+  // клавиатура — только когда Стасик в фокусе (кликнули по нему), иначе стрелки и пробел листают страницу
+  canvas.tabIndex = 0;
+  canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }));
   const KEYMAP = { ArrowLeft: 0, KeyA: 0, ArrowDown: 1, KeyS: 1, Space: 1, ArrowRight: 2, KeyD: 2 };
-  addEventListener('keydown', (e) => {
+  canvas.addEventListener('keydown', (e) => {
     const i = KEYMAP[e.code];
     if (i === undefined || e.metaKey || e.ctrlKey || e.altKey) return;
     e.preventDefault();
     if (!e.repeat) setKey(i, 'k' + e.code, true);
   });
-  addEventListener('keyup', (e) => { const i = KEYMAP[e.code]; if (i !== undefined) setKey(i, 'k' + e.code, false); });
-  addEventListener('blur', () => held.forEach((s, i) => { s.clear(); setKey(i, '', false); }));
+  canvas.addEventListener('keyup', (e) => { const i = KEYMAP[e.code]; if (i !== undefined) setKey(i, 'k' + e.code, false); });
+  canvas.addEventListener('blur', () => held.forEach((s, i) => { s.clear(); setKey(i, '', false); }));
+
+  // колесо листает страницу, а не приближает; на сенсорном экране свайп тоже листает — крутить только мышью
+  controls.enableZoom = false;
+  if (matchMedia('(pointer: coarse)').matches) {
+    controls.enableRotate = false;
+    canvas.style.touchAction = 'pan-y';
+  }
+
+  // позы под разделы страницы: поворот корпуса и масштаб
+  const POSES = {
+    hero:     { ry: 0,             rx: 0,     s: 1 },
+    hardware: { ry: 1.2,           rx: 0.12,  s: 1 },     // левый бок: питание, USB-C, Port A
+    speed:    { ry: -0.32,         rx: 0.04,  s: 1.3 },   // крупно экран
+    smooth:   { ry: -1.0,          rx: 0.1,   s: 1 },     // правый бок: решётка динамика
+    remote:   { ry: Math.PI + 0.5, rx: -0.35, s: 0.95 },  // дно
+  };
+  const pose = { ...POSES.hero }, target = { ...POSES.hero };
 
   // кадр
   let lastTouch = -1e9;
   controls.addEventListener('start', () => { lastTouch = Infinity; });
   controls.addEventListener('end', () => { lastTouch = performance.now(); });
+  let size = '';
   function resize() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
-    if (canvas.width !== Math.round(w * renderer.getPixelRatio())) {
-      renderer.setSize(w, h, false);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      // на узком экране отодвигаем камеру, чтобы корпус помещался по ширине
-      camera.position.setLength(178 * Math.max(1, 1.2 / camera.aspect));
-    }
+    if (size === w + 'x' + h) return;
+    size = w + 'x' + h;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    // на узком экране отодвигаем камеру, чтобы корпус помещался по ширине
+    camera.position.setLength(178 * Math.max(1, 1.2 / camera.aspect));
   }
+  let prevT = 0;
   renderer.setAnimationLoop((t) => {
     resize();
+    // к позе — по времени, а не по кадрам: на слабом железе поворот не растягивается
+    const k = 1 - Math.exp(-Math.min(t - prevT, 100) / 220);
+    prevT = t;
+    for (const n in pose) pose[n] += (target[n] - pose[n]) * k;
     // в покое Стасик слегка покачивается
     const idle = Math.min(Math.max((t - lastTouch - 2500) / 1500, 0), 1);
-    root.rotation.y += (Math.sin(t / 2600) * 0.18 * idle - root.rotation.y) * 0.05;
+    root.rotation.y = pose.ry + Math.sin(t / 2600) * 0.18 * idle;
+    root.rotation.x = pose.rx;
+    root.scale.setScalar(pose.s);
     root.position.y = Math.sin(t / 1700) * 0.6 * idle;
     if (emu) tex.needsUpdate = true;
     controls.update();
@@ -282,6 +311,7 @@ export function mount({ canvas, emuFrame, onReady }) {
   });
 
   return {
+    setPose(name) { if (POSES[name]) Object.assign(target, POSES[name]); },
     // в .glb уходит текущий кадр экрана; canvas из iframe экспортёр не принимает
     // (instanceof из другого окна), поэтому кадр копируется в свой canvas
     async exportGLB() {

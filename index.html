@@ -4,31 +4,140 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Стасик</title>
-<meta name="description" content="Стасик — карманное устройство на M5Stack Basic. 3D-модель с живой прошивкой в экране.">
+<meta name="description" content="Стасик — карманный гаджет на M5Stack Basic со своей прошивкой. В экране 3D-модели работает настоящая прошивка, собранная в WebAssembly.">
+<meta name="theme-color" content="#2563e0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
 <style>
+  /* Lighthouse (дизайн-система портфолио): одна сплошная заливка кобальтом, как жёлтый у play.date,
+     белый текст, единственный контрастный элемент — красная кнопка. */
   :root {
-    --bg: #e9e7e2;   /* фирменный цвет страницы ещё не выбран */
-    --ink: #16171a;
-    --dim: #6a6c72;
+    --bg: #2563e0;        /* blue-500 */
+    --ink: #ffffff;
+    --soft: #d6e4ff;      /* blue-100 — второстепенный текст */
+    --night: #050a18;     /* ink-0 */
+    --line: rgba(255, 255, 255, .22);
+    --red: #ec2f1f;       /* red-500 */
+    --red-hover: #ff5745;
+    --col: 560px;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
-  body { background: var(--bg); color: var(--ink); font: 500 15px/1.5 Montserrat, system-ui, sans-serif; overflow: hidden; }
-  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
-  #view:active { cursor: grabbing; }
-  header { position: fixed; left: 32px; top: 28px; pointer-events: none; }
-  h1 { margin: 0; font-size: clamp(40px, 7vw, 72px); font-weight: 800; letter-spacing: -.03em; line-height: 1; }
-  .hint { margin: 10px 0 0; color: var(--dim); max-width: 36ch; }
-  kbd { font: 700 12px Montserrat, sans-serif; padding: 1px 6px; border-radius: 5px; background: rgba(0,0,0,.07); }
-  .tools { position: fixed; right: 24px; bottom: 24px; display: flex; gap: 8px; }
-  button { appearance: none; border: 0; border-radius: 999px; padding: 10px 18px; cursor: pointer;
-           font: 700 13px Montserrat, sans-serif; background: var(--ink); color: var(--bg); }
-  /* эмулятор живёт за кадром: нужен только его canvas */
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 500 18px/1.6 Montserrat, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  b, strong { font-weight: 700; }
+
+  .top {
+    position: absolute; z-index: 5; left: 0; right: 0; top: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 22px clamp(16px, 4vw, 48px);
+    font-size: 14px; font-weight: 600;
+  }
+  .top a { text-decoration: none; opacity: .85; }
+  .top a:hover { opacity: 1; }
+
+  /* ---------- история: текст слева, Стасик справа (липкий) ---------- */
+  .story {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    padding: 0 clamp(16px, 4vw, 48px);
+  }
+  .stage { position: sticky; top: 0; align-self: start; height: 100vh; height: 100svh; grid-column: 2; grid-row: 1; }
+  .stage canvas { width: 100%; height: 100%; display: block; outline: none; cursor: grab; }
+  .stage canvas:active { cursor: grabbing; }
+  .stage .tip {
+    position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%);
+    font-size: 13px; font-weight: 600; color: var(--soft); white-space: nowrap; pointer-events: none;
+    transition: opacity .4s;
+  }
+  .stage:focus-within .tip { opacity: 0; }
+  .chapters { grid-column: 1; grid-row: 1; }
+  .chapter {
+    min-height: 100vh; max-width: var(--col);
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 96px 0;
+  }
+  h1, h2 {
+    margin: 0 0 24px; font-weight: 800; letter-spacing: -.035em; line-height: .95;
+  }
+  h1 { font-size: clamp(64px, 9vw, 128px); }
+  h2 { font-size: clamp(48px, 6vw, 84px); }
+  p { margin: 0 0 18px; }
+  .lead { font-size: 21px; }
+  .muted { color: var(--soft); }
+  kbd {
+    font: 700 14px Montserrat, sans-serif; padding: 1px 8px; border-radius: 6px;
+    background: rgba(255, 255, 255, .16); white-space: nowrap;
+  }
+
+  /* цифры: было → стало */
+  .stats { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 0; }
+  .stats li {
+    display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 16px;
+    padding: 14px 0; border-top: 1px solid var(--line);
+  }
+  .stats li:last-child { border-bottom: 1px solid var(--line); }
+  .stats .k { color: var(--soft); font-size: 16px; }
+  .stats .v { font-size: clamp(24px, 3vw, 34px); font-weight: 800; letter-spacing: -.02em; white-space: nowrap; }
+  .stats .v s { text-decoration: none; opacity: .55; font-weight: 600; }
+  .specs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 32px; margin: 18px 0 0; }
+  .specs div { border-top: 1px solid var(--line); padding-top: 10px; }
+  .specs b { display: block; font-size: clamp(26px, 3vw, 36px); font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+  .specs span { color: var(--soft); font-size: 15px; }
+
+  /* ---------- приложения ---------- */
+  .wide { padding: 120px clamp(16px, 4vw, 48px) 40px; }
+  .wide > .intro { max-width: var(--col); }
+  .apps {
+    list-style: none; margin: 48px 0 0; padding: 0;
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 40px 28px;
+  }
+  .apps img {
+    display: block; width: 100%; aspect-ratio: 4 / 3; border-radius: 10px;
+    background: var(--night); box-shadow: 0 0 0 10px var(--night); margin: 10px 0 24px;
+    image-rendering: auto;
+  }
+  .apps b { display: block; font-size: 19px; }
+  .apps span { color: var(--soft); font-size: 15px; }
+
+  /* ---------- финал ---------- */
+  .end { padding: 120px clamp(16px, 4vw, 48px) 64px; }
+  .end .intro { max-width: var(--col); }
+  .cta {
+    display: inline-block; margin: 18px 0 0; padding: 16px 30px; border-radius: 999px;
+    background: var(--red); color: #fff; text-decoration: none; font-weight: 700; font-size: 17px;
+    transition: background .15s;
+  }
+  .cta:hover { background: var(--red-hover); }
+  .links { margin: 28px 0 0; display: flex; gap: 24px; flex-wrap: wrap; font-size: 15px; font-weight: 600; }
+  .links button { appearance: none; border: 0; padding: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+  footer { margin-top: 96px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--soft); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
   #emu { position: fixed; left: -10000px; top: 0; width: 480px; height: 640px; border: 0; }
-  @media (max-width: 600px) { header { left: 16px; top: 18px; } .tools { right: 16px; bottom: 16px; } }
+
+  /* телефон: Стасик закреплён сверху, текст листается под ним */
+  @media (max-width: 860px) {
+    body { font-size: 17px; }
+    .story { display: block; padding: 0 16px; }
+    .stage { height: 46vh; height: 46svh; z-index: 2; background: var(--bg); margin: 0 -16px; }
+    .stage .tip { bottom: 6px; }
+    .stage .kb { display: none; }
+    .chapter { scroll-margin-top: 46svh; }
+    .chapter { min-height: 0; padding: 40px 0 72px; }
+    .chapter:first-child { padding-top: 24px; }
+    .top { position: relative; padding: 16px; }
+    .wide, .end { padding-left: 16px; padding-right: 16px; }
+    .apps { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 18px; }
+    .apps img { box-shadow: 0 0 0 6px var(--night); border-radius: 6px; margin: 6px 0 16px; }
+    .apps b { font-size: 16px; }
+    .apps span { font-size: 13px; }
+  }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 </style>
 <script type="importmap">
 { "imports": {
@@ -38,16 +147,109 @@
 </script>
 </head>
 <body>
-<canvas id="view" aria-label="3D-модель Стасика"></canvas>
-<header>
-  <h1>Стасик.</h1>
-  <p class="hint">Крутите мышью. В экране — настоящая прошивка: нажимайте кнопки A, B, C или <kbd>←</kbd> <kbd>↓</kbd> <kbd>→</kbd>.</p>
-</header>
-<div class="tools"><button id="glb">Скачать .glb</button></div>
+<nav class="top">
+  <a href="https://eyeanton.github.io/">← Портфолио</a>
+  <span>Anton Egorov · 2026</span>
+</nav>
+
+<div class="story">
+  <div class="stage">
+    <canvas id="view" aria-label="3D-модель Стасика. Кликните, чтобы управлять стрелками"></canvas>
+    <div class="tip">Нажимайте кнопки A, B, C<span class="kb"> — или кликните и жмите <kbd>←</kbd> <kbd>↓</kbd> <kbd>→</kbd></span></div>
+  </div>
+
+  <div class="chapters">
+    <section class="chapter" id="hero" data-pose="hero">
+      <h1>Стасик.</h1>
+      <p class="lead">Маленький квадратный гаджет на M5Stack: экран, три кнопки и динамик. <b>Размером с печенье</b> — 54 миллиметра в ширину.</p>
+      <p>Я написал для него свою прошивку: меню-карусель, игры, кубики для настолок, часы и таймер лимитов Claude.
+        <b>То, что сейчас на экране модели, — настоящая прошивка</b>: тот же код на C++, собранный в WebAssembly.
+        Нажмите на кнопки.</p>
+    </section>
+
+    <section class="chapter" id="hardware" data-pose="hardware">
+      <h2>Железо.</h2>
+      <p>Внутри — <b>ESP32 на 240 МГц</b> и 520 КБ памяти. Ни видеокарты, ни дополнительной памяти:
+        на целый кадр 320×240 её просто не хватает. Поэтому <b>экран рисуется полосами по 40 строк</b>,
+        и каждая полоса уезжает на дисплей по SPI, пока рисуется следующая.</p>
+      <div class="specs">
+        <div><b>54×54×17</b><span>миллиметров</span></div>
+        <div><b>320×240</b><span>экран 2″, IPS</span></div>
+        <div><b>240 МГц</b><span>два ядра ESP32</span></div>
+        <div><b>~110 КБ</b><span>свободно после старта</span></div>
+      </div>
+    </section>
+
+    <section class="chapter" id="speed" data-pose="speed">
+      <h2>Скорость.</h2>
+      <p>Первые кубики крутились на 14 кадрах в секунду — заметно дёргались. Я замерил каждую часть кадра
+        и переписал самое дорогое: скругления рисуются <b>построчно</b>, а не толстыми линиями,
+        а полосы уходят на экран через <b>DMA</b> — процессор в это время уже рисует следующую.</p>
+      <ul class="stats">
+        <li><span class="k">Кадр целиком</span><span class="v"><s>78 →</s> 20 мс</span></li>
+        <li><span class="k">Кубики</span><span class="v"><s>14 →</s> 38 к/с</span></li>
+        <li><span class="k">Скруглённые фигуры</span><span class="v"><s>50 →</s> 6 мс</span></li>
+        <li><span class="k">Пересылка на экран</span><span class="v"><s>12,7 →</s> 0,6 мс</span></li>
+      </ul>
+    </section>
+
+    <section class="chapter" id="smooth" data-pose="smooth">
+      <h2>Плавность.</h2>
+      <p>Стандартные дуги и треугольники библиотеки рисуются «лесенкой». Сглаживание пришлось написать самому:
+        кольца, дуги и скруглённые многоугольники считают покрытие только на краях, поэтому остаются дешёвыми.</p>
+      <p>Иконки и надписи рисуются <b>один раз в маску</b>, а дальше кадр только накладывает её нужным цветом.
+        Плавная анимация — системный режим до 50 кадров в секунду, и когда батарея садится,
+        <b>Стасик сам его выключает</b>.</p>
+    </section>
+  </div>
+</div>
+
+<section class="wide" id="apps" data-pose="hero">
+  <div class="intro">
+    <h2>Приложения.</h2>
+    <p>Всё нарисовано под экран 320×240 и три кнопки. Скриншоты сняты прямо из эмулятора на этой странице.</p>
+  </div>
+  <ul class="apps">
+    <li><img src="assets/apps/dungeon.png" alt="Подземелье: Гробница Короля-лича" width="320" height="240"><b>Подземелье</b><span>соло-приключение по комнатам</span></li>
+    <li><img src="assets/apps/book.png" alt="Книга-игра «Маяк на Туманном мысе»" width="320" height="240"><b>Книга-игра</b><span>«Маяк на Туманном мысе», экран боком</span></li>
+    <li><img src="assets/apps/counter.png" alt="Счётчик здоровья на двух игроков" width="320" height="240"><b>Счётчик здоровья</b><span>для настолок на двоих</span></li>
+    <li><img src="assets/apps/dice.png" alt="Кубик d6" width="320" height="240"><b>Кубики</b><span>d4–d20, бросок с анимацией</span></li>
+    <li><img src="assets/apps/clock.png" alt="Перекидные часы" width="320" height="240"><b>Часы</b><span>перекидные карточки</span></li>
+    <li><img src="assets/apps/claude.png" alt="Таймер лимитов Claude" width="320" height="240"><b>Таймер Клод</b><span>сколько осталось лимитов и когда сброс</span></li>
+    <li><img src="assets/apps/moon.png" alt="Фаза Луны" width="320" height="240"><b>Луна</b><span>фаза и дни до полнолуния</span></li>
+    <li><img src="assets/apps/settings.png" alt="Настройки звука, яркости и темы" width="320" height="240"><b>Настройки</b><span>звук, яркость, тема</span></li>
+  </ul>
+</section>
+
+<section class="end" id="remote" data-pose="remote">
+  <div class="intro">
+    <h2>Пульт.</h2>
+    <p>Стасик живёт в домашнем Wi-Fi: <b>прошивка обновляется по воздуху</b>, а Android-приложение работает
+      как пульт и настройки. Когда Claude Code заканчивает задачу, Стасик звенит и показывает карточку с итогом,
+      а ссылки присылает QR-кодом — открыть с телефона.</p>
+    <p class="muted">Wi-Fi, Bluetooth и уведомления работают только на настоящем устройстве. Настройки эмулятора сохраняются в браузере.</p>
+    <a class="cta" href="https://eyeanton.github.io/">Все проекты</a>
+    <div class="links">
+      <button id="glb" type="button">Скачать 3D-модель (.glb)</button>
+    </div>
+  </div>
+  <footer>
+    <span>Модель — по официальному чертежу M5Stack Basic v2.7. Сделано на three.js.</span>
+    <span id="fw"></span>
+  </footer>
+</section>
+
 <iframe id="emu" src="emu/index.html" tabindex="-1" aria-hidden="true" title="эмулятор"></iframe>
 <script type="module">
   import { mount } from './stasik3d.js';
   const app = mount({ canvas: document.getElementById('view'), emuFrame: document.getElementById('emu') });
+
+  // раздел в середине экрана задаёт позу Стасика
+  const io = new IntersectionObserver((es) => {
+    for (const e of es) if (e.isIntersecting) app.setPose(e.target.dataset.pose);
+  }, { rootMargin: '-45% 0px -45% 0px' });
+  document.querySelectorAll('[data-pose]').forEach((s) => io.observe(s));
+
   document.getElementById('glb').addEventListener('click', async () => {
     const buf = await app.exportGLB();
     const a = document.createElement('a');
@@ -55,6 +257,11 @@
     a.download = 'stasik.glb';
     a.click();
   });
+
+  fetch('emu/VERSION').then((r) => r.ok ? r.text() : '').then((t) => {
+    const [rev, date] = t.trim().split(' ');
+    if (rev) document.getElementById('fw').textContent = 'Прошивка ' + rev + (date ? ' от ' + new Date(date).toLocaleDateString('ru') : '');
+  }).catch(() => {});
 </script>
 </body>
 </html>

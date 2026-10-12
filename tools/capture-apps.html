@@ -1,0 +1,38 @@
+<!doctype html><meta charset="utf-8"><body>
+<iframe id="f" style="width:480px;height:640px"></iframe>
+<script>
+// Снимки экранов для assets/apps (tools/update-shots.sh): каждый — с чистого запуска, затем нажатия кнопок, затем кадр canvas → POST /save
+const JOBS = [
+  ['menu',     ''],
+  ['book',     'B B'],
+  ['dungeon',  'B C B'],
+  ['counter',  'C B B'],
+  ['dice',     'C B C B'],
+  ['dice-roll','C B C B B', 350],
+  ['clock',    'C C B B'],
+  ['claude',   'C C B C C B'],
+  ['moon',     'C C B C C C B'],
+  ['settings', 'C C C B B'],
+];
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const post = (name, body) => fetch('/save?name=' + name, { method: 'POST', body });
+async function run() {
+  const f = document.getElementById('f');
+  for (const [name, seq, settle] of JOBS) {
+    try { Object.keys(localStorage).filter(k => k.startsWith('stasik:')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+    f.src = '../emu/index.html?' + Date.now();
+    await new Promise(r => f.onload = r);
+    await sleep(8000);                       // заставка
+    const M = f.contentWindow.Module;
+    for (const k of seq.split(' ').filter(Boolean)) {
+      const i = 'ABC'.indexOf(k);
+      M._web_button(i, 1); await sleep(130); M._web_button(i, 0);
+      await sleep(900);
+    }
+    await sleep(settle ?? 1800);
+    await post(name, f.contentDocument.getElementById('screen').toDataURL('image/png'));
+  }
+  await post('done', 'ok');
+}
+run().catch(e => post('error', String(e)));
+</script>
