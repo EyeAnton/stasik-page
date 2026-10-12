@@ -90,6 +90,7 @@ export function buildStasik(screenTexture) {
   screen.name = 'screen';
   const sheen = new THREE.Mesh(new THREE.PlaneGeometry(W - 3, W - 3), M.sheen);
   sheen.position.z = H + 0.08;
+  sheen.name = 'sheen';  // только для браузера: в glTF нет аддитивного смешивания
   dev.add(glass, screen, sheen);
 
   // кнопки A, B, C
@@ -145,6 +146,22 @@ export function buildStasik(screenTexture) {
   const root = new THREE.Group();
   root.add(dev);
   return { root, keys };
+}
+
+// GLB = заголовок 12 байт + один JSON-чанк, выровненный пробелами до 4 байт
+function packGLB(gltf) {
+  let json = new TextEncoder().encode(JSON.stringify(gltf));
+  const pad = (4 - (json.length % 4)) % 4;
+  if (pad) { const p = new Uint8Array(json.length + pad).fill(0x20); p.set(json); json = p; }
+  const out = new ArrayBuffer(20 + json.length);
+  const v = new DataView(out);
+  v.setUint32(0, 0x46546c67, true);          // 'glTF'
+  v.setUint32(4, 2, true);
+  v.setUint32(8, out.byteLength, true);
+  v.setUint32(12, json.length, true);
+  v.setUint32(16, 0x4e4f534a, true);         // 'JSON'
+  new Uint8Array(out, 20).set(json);
+  return out;
 }
 
 // ---------- Сцена ----------
@@ -265,9 +282,27 @@ export function mount({ canvas, emuFrame, onReady }) {
   });
 
   return {
-    exportGLB() {
-      return new Promise((resolve, reject) =>
-        new GLTFExporter().parse(root, resolve, reject, { binary: true }));
+    // в .glb уходит текущий кадр экрана; canvas из iframe экспортёр не принимает
+    // (instanceof из другого окна), поэтому кадр копируется в свой canvas
+    async exportGLB() {
+      const live = tex.image;
+      const snap = document.createElement('canvas');
+      snap.width = 320; snap.height = 240;
+      snap.getContext('2d').drawImage(live, 0, 0, 320, 240);
+      tex.image = snap;
+      const sheen = root.getObjectByName('sheen');
+      sheen.visible = false;
+      try {
+        // binary-режим экспортёра ждёт canvas.toBlob, который в headless Chrome не возвращается;
+        // берём glTF-JSON (данные встроены data:URI) и сами кладём его в контейнер GLB
+        const gltf = await new Promise((resolve, reject) =>
+          new GLTFExporter().parse(root, resolve, reject, { binary: false }));
+        return packGLB(gltf);
+      } finally {
+        sheen.visible = true;
+        tex.image = live;
+        tex.needsUpdate = true;
+      }
     },
   };
 }
