@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стасик — прошивка M5Stack в браузере</title>
+<meta name="description" content="Живая прошивка карманного устройства на M5Stack Basic: меню, счётчик здоровья, кубики, часы, книга-игра. Тот же C++-код, собранный в WebAssembly.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f3f2ee;
+    --bg2: #e7e5df;
+    --ink: #17181b;
+    --dim: #6b6d74;
+    --line: #d6d3cb;
+    --accent: #ff9f2e;
+    --chip: #ffffff;
+    --body1: #34363b;
+    --body2: #1d1e21;
+    --key1: #3b3d43;
+    --key2: #26272b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101114;
+      --bg2: #17181c;
+      --ink: #eeeef0;
+      --dim: #9a9ca4;
+      --line: #2a2c31;
+      --chip: #1d1f23;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101114; --bg2: #17181c; --ink: #eeeef0; --dim: #9a9ca4; --line: #2a2c31; --chip: #1d1f23;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    background: radial-gradient(120% 80% at 50% 0%, var(--bg) 0%, var(--bg2) 100%);
+    background-color: var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 Inter, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 56px 24px 64px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+    gap: 56px;
+    align-items: center;
+  }
+  @media (max-width: 880px) {
+    main { grid-template-columns: 1fr; gap: 36px; padding: 28px 16px 48px; }
+    .about { order: 2; }
+  }
+
+  /* ---------- Устройство ---------- */
+  .stage { display: flex; justify-content: center; }
+  .device {
+    --s: min(480px, calc(100vw - 32px));
+    width: var(--s);
+    aspect-ratio: 1 / 1.02;
+    position: relative;
+    border-radius: calc(var(--s) * 0.07);
+    background: linear-gradient(160deg, var(--body1), var(--body2) 70%);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,.08) inset,
+      0 -2px 0 rgba(0,0,0,.35) inset,
+      0 30px 60px -20px rgba(0,0,0,.45),
+      0 12px 24px -12px rgba(0,0,0,.35);
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  /* нижний модуль-батарея — чуть другой оттенок */
+  .device::after {
+    content: "";
+    position: absolute; left: 0; right: 0; bottom: 0; height: 8%;
+    border-radius: 0 0 calc(var(--s) * 0.07) calc(var(--s) * 0.07);
+    background: linear-gradient(180deg, #2a2b2f, #19191c);
+    border-top: 1px solid rgba(0,0,0,.4);
+  }
+  .power {
+    position: absolute; left: -5px; top: 20%; width: 6px; height: 9%;
+    border-radius: 3px 0 0 3px; background: #c9302c;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.3) inset;
+  }
+  .device {
+    display: flex; flex-direction: column; align-items: center;
+    padding: calc(var(--s) * 0.075) calc(var(--s) * 0.085) 0;
+  }
+  .bezel {
+    width: 100%;
+    background: #050506;
+    border-radius: calc(var(--s) * 0.02);
+    box-shadow: 0 0 0 1px rgba(255,255,255,.05), 0 2px 6px rgba(0,0,0,.5) inset;
+    padding: calc(var(--s) * 0.028);
+    position: relative;
+  }
+  canvas {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    display: block;
+    background: #000;
+    image-rendering: auto;
+  }
+  .loading {
+    position: absolute; inset: calc(var(--s) * 0.028);
+    display: grid; place-items: center; color: #6b6d74; font-size: 13px;
+    transition: opacity .3s;
+  }
+  .loading.hidden { opacity: 0; pointer-events: none; }
+  .keys {
+    width: 100%;
+    margin-top: calc(var(--s) * 0.06);
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 9%;
+    padding: 0 8%;
+  }
+  .key {
+    appearance: none; border: 0; cursor: pointer;
+    height: calc(var(--s) * 0.075);
+    border-radius: calc(var(--s) * 0.022);
+    background: linear-gradient(180deg, var(--key1), var(--key2));
+    box-shadow: 0 1px 0 rgba(255,255,255,.1) inset, 0 3px 0 #111214, 0 5px 10px rgba(0,0,0,.4);
+    color: #8d9097; font: 600 12px Inter, sans-serif; letter-spacing: .08em;
+    transition: transform .05s, box-shadow .05s, color .1s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .key.down {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 0 0 #111214, 0 2px 4px rgba(0,0,0,.4);
+    color: var(--accent);
+  }
+  .key:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  /* ---------- Текст ---------- */
+  .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+  h1 { font-size: clamp(34px, 5vw, 48px); line-height: 1.05; letter-spacing: -.02em; margin: 0 0 16px; font-weight: 700; }
+  .lead { color: var(--dim); margin: 0 0 28px; font-size: 17px; max-width: 46ch; }
+  h2 { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin: 28px 0 10px; }
+  .controls { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+  .controls li { display: flex; gap: 12px; align-items: baseline; }
+  .combo { flex: none; min-width: 112px; display: flex; gap: 4px; flex-wrap: wrap; }
+  kbd {
+    font: 600 12px Inter, sans-serif; padding: 2px 7px; border-radius: 6px;
+    background: var(--chip); border: 1px solid var(--line); border-bottom-width: 2px; color: var(--ink);
+  }
+  .controls span:last-child { color: var(--dim); }
+  .apps { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .apps li { padding: 4px 10px; border-radius: 99px; background: var(--chip); border: 1px solid var(--line); font-size: 14px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 28px; }
+  .btn {
+    appearance: none; cursor: pointer; font: 500 14px Inter, sans-serif; color: var(--ink);
+    padding: 8px 14px; border-radius: 10px; background: var(--chip); border: 1px solid var(--line);
+  }
+  .btn:hover { border-color: var(--dim); }
+  .note { color: var(--dim); font-size: 13px; margin-top: 28px; max-width: 52ch; }
+</style>
+</head>
+<body>
+<main>
+  <section class="stage" aria-label="Интерактивный Стасик">
+    <div class="device" id="device">
+      <div class="power" aria-hidden="true"></div>
+      <div class="bezel">
+        <canvas id="screen" width="320" height="240" aria-label="Экран устройства"></canvas>
+        <div class="loading" id="loading">загрузка…</div>
+      </div>
+      <div class="keys">
+        <button class="key" data-k="0" aria-label="Кнопка A">A</button>
+        <button class="key" data-k="1" aria-label="Кнопка B">B</button>
+        <button class="key" data-k="2" aria-label="Кнопка C">C</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="about">
+    <p class="eyebrow">ESP32 · C++ · WebAssembly</p>
+    <h1>Стасик</h1>
+    <p class="lead">Карманный гаджет на M5Stack Basic: экран 320×240 и три кнопки. Здесь крутится та же прошивка, что и на устройстве: C++-код собран в WebAssembly, графика рисуется той же библиотекой.</p>
+
+    <h2>Внутри</h2>
+    <ul class="apps">
+      <li>Счётчик здоровья</li><li>Кубики</li><li>Часы</li><li>Таймер Клод</li><li>Пульт</li><li>Книга-игра</li><li>Подземелье</li><li>Настройки</li>
+    </ul>
+
+    <h2>Управление</h2>
+    <ul class="controls">
+      <li><span class="combo"><kbd>A</kbd><kbd>C</kbd></span><span>влево / вправо</span></li>
+      <li><span class="combo"><kbd>A</kbd></span><span>держать — назад, на уровень выше</span></li>
+      <li><span class="combo"><kbd>B</kbd></span><span>выбрать; держать — настройки приложения</span></li>
+      <li><span class="combo"><kbd>A</kbd>+<kbd>C</kbd></span><span>держать 1,5 секунды — выйти из приложения</span></li>
+      <li><span class="combo"><kbd>A</kbd>+<kbd>B</kbd></span><span>громкость и яркость</span></li>
+      <li><span class="combo"><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></span><span>то же с клавиатуры (или A S D)</span></li>
+    </ul>
+
+    <div class="row">
+      <button class="btn" id="sound" aria-pressed="false">Звук: выкл</button>
+      <button class="btn" id="reset">Сбросить сохранения</button>
+    </div>
+    <p class="note">Wi-Fi, Bluetooth-пульт и уведомления Claude работают только на настоящем устройстве. Настройки и прогресс здесь сохраняются в браузере.</p>
+  </section>
+</main>
+
+<script>
+  const canvas = document.getElementById('screen');
+  const ctx = canvas.getContext('2d');
+  const loading = document.getElementById('loading');
+  let soundOn = false, audio = null, osc = null;
+
+  function ensureAudio() {
+    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+  }
+
+  var Module = {
+    print: (t) => console.log(t),
+    printErr: (t) => console.warn(t),
+    stasikPresent(px, w, h) {
+      ctx.putImageData(new ImageData(new Uint8ClampedArray(px), w, h), 0, 0);
+      if (!loading.classList.contains('hidden')) loading.classList.add('hidden');
+    },
+    stasikTone(freq, ms, vol) {
+      if (osc) { try { osc.stop(); } catch (e) {} osc = null; }
+      if (!soundOn || !audio || freq <= 0) return;
+      const t = audio.currentTime;
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.05 + 0.12 * vol, t + 0.004);
+      g.gain.setValueAtTime(0.05 + 0.12 * vol, t + Math.max(0.005, ms / 1000 - 0.01));
+      g.gain.linearRampToValueAtTime(0, t + ms / 1000);
+      osc = audio.createOscillator();
+      osc.type = 'square';
+      osc.frequency.value = freq;
+      osc.connect(g).connect(audio.destination);
+      osc.start(t);
+      osc.stop(t + ms / 1000 + 0.02);
+    },
+  };
+
+  // Кнопки: мышь/палец (удержание работает) и клавиатура
+  const keys = [...document.querySelectorAll('.key')];
+  const held = [new Set(), new Set(), new Set()];
+  function setKey(i, src, down) {
+    if (down) held[i].add(src); else held[i].delete(src);
+    const on = held[i].size > 0;
+    keys[i].classList.toggle('down', on);
+    if (Module._web_button) Module._web_button(i, on ? 1 : 0);
+  }
+  keys.forEach((el, i) => {
+    el.addEventListener('pointerdown', (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); if (soundOn) ensureAudio(); setKey(i, 'p' + e.pointerId, true); });
+    const up = (e) => setKey(i, 'p' + e.pointerId, false);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+  });
+  const KEYMAP = { ArrowLeft: 0, KeyA: 0, ArrowDown: 1, KeyS: 1, Space: 1, ArrowRight: 2, KeyD: 2 };
+  addEventListener('keydown', (e) => {
+    const i = KEYMAP[e.code];
+    if (i === undefined || e.metaKey || e.ctrlKey || e.altKey) return;
+    e.preventDefault();
+    if (!e.repeat) { if (soundOn) ensureAudio(); setKey(i, 'k' + e.code, true); }
+  });
+  addEventListener('keyup', (e) => { const i = KEYMAP[e.code]; if (i !== undefined) setKey(i, 'k' + e.code, false); });
+  addEventListener('blur', () => held.forEach((s, i) => { s.clear(); setKey(i, '', false); }));
+
+  const soundBtn = document.getElementById('sound');
+  soundBtn.addEventListener('click', () => {
+    soundOn = !soundOn;
+    if (soundOn) ensureAudio();
+    soundBtn.textContent = 'Звук: ' + (soundOn ? 'вкл' : 'выкл');
+    soundBtn.setAttribute('aria-pressed', soundOn);
+  });
+  document.getElementById('reset').addEventListener('click', () => {
+    try { Object.keys(localStorage).filter(k => k.startsWith('stasik:')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+    location.reload();
+  });
+</script>
+<script src="stasik.js"></script>
+</body>
+</html>

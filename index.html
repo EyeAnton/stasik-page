@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стасик</title>
+<meta name="description" content="Стасик — карманное устройство на M5Stack Basic. 3D-модель с живой прошивкой в экране.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #e9e7e2;   /* фирменный цвет страницы ещё не выбран */
+    --ink: #16171a;
+    --dim: #6a6c72;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font: 500 15px/1.5 Montserrat, system-ui, sans-serif; overflow: hidden; }
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #view:active { cursor: grabbing; }
+  header { position: fixed; left: 32px; top: 28px; pointer-events: none; }
+  h1 { margin: 0; font-size: clamp(40px, 7vw, 72px); font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+  .hint { margin: 10px 0 0; color: var(--dim); max-width: 36ch; }
+  kbd { font: 700 12px Montserrat, sans-serif; padding: 1px 6px; border-radius: 5px; background: rgba(0,0,0,.07); }
+  .tools { position: fixed; right: 24px; bottom: 24px; display: flex; gap: 8px; }
+  button { appearance: none; border: 0; border-radius: 999px; padding: 10px 18px; cursor: pointer;
+           font: 700 13px Montserrat, sans-serif; background: var(--ink); color: var(--bg); }
+  /* эмулятор живёт за кадром: нужен только его canvas */
+  #emu { position: fixed; left: -10000px; top: 0; width: 480px; height: 640px; border: 0; }
+  @media (max-width: 600px) { header { left: 16px; top: 18px; } .tools { right: 16px; bottom: 16px; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="view" aria-label="3D-модель Стасика"></canvas>
+<header>
+  <h1>Стасик.</h1>
+  <p class="hint">Крутите мышью. В экране — настоящая прошивка: нажимайте кнопки A, B, C или <kbd>←</kbd> <kbd>↓</kbd> <kbd>→</kbd>.</p>
+</header>
+<div class="tools"><button id="glb">Скачать .glb</button></div>
+<iframe id="emu" src="emu/index.html" tabindex="-1" aria-hidden="true" title="эмулятор"></iframe>
+<script type="module">
+  import { mount } from './stasik3d.js';
+  const app = mount({ canvas: document.getElementById('view'), emuFrame: document.getElementById('emu') });
+  document.getElementById('glb').addEventListener('click', async () => {
+    const buf = await app.exportGLB();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([buf], { type: 'model/gltf-binary' }));
+    a.download = 'stasik.glb';
+    a.click();
+  });
+</script>
+</body>
+</html>
