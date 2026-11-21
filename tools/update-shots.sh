@@ -5,9 +5,11 @@ set -euo pipefail
 PAGE="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
 PORT=8799
+CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"   # другой браузер — CHROME=/путь
+[ -x "$CHROME" ] || { echo "нет Chrome: $CHROME (задайте CHROME=/путь)"; exit 1; }
 python3 "$PAGE/tools/capture_server.py" "$PAGE" "$TMP/shots" $PORT &
 SRV=$!
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --use-angle=swiftshader \
+"$CHROME" --headless=new --use-angle=swiftshader \
   --enable-unsafe-swiftshader --user-data-dir="$TMP/chrome" "http://127.0.0.1:$PORT/tools/capture-apps.html" >/dev/null 2>&1 &
 CH=$!
 trap 'kill $CH $SRV 2>/dev/null; rm -rf "$TMP"' EXIT

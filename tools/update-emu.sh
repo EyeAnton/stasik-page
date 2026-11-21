@@ -1,12 +1,12 @@
 #!/bin/bash
 # Обновить emu/ свежей прошивкой: origin/main репо m5-health-counter → web/build.sh → emu/.
 # Правило: на странице всегда самая актуальная прошивка — запускать перед каждой публикацией.
-#   tools/update-emu.sh [путь к m5-health-counter]
+#   tools/update-emu.sh [путь к m5-health-counter]   (или STASIK_FW=путь; по умолчанию ~/projects/m5-health-counter)
 # Рабочую копию прошивки не трогает: собирает во временной копии (git archive),
 # вместо настоящего secrets.h подкладывает secrets.example.h.
 set -euo pipefail
 PAGE="$(cd "$(dirname "$0")/.." && pwd)"
-FW="${1:-$HOME/projects/m5-health-counter}"
+FW="${1:-${STASIK_FW:-$HOME/projects/m5-health-counter}}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

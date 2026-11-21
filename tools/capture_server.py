@@ -23,7 +23,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         name = os.path.basename(q.get("name", ["x"])[0])
-        body = self.rfile.read(int(self.headers["Content-Length"])).decode()
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
         if body.startswith("data:"):
             with open(os.path.join(OUT, name + ".png"), "wb") as f:
                 f.write(base64.b64decode(body.split(",", 1)[1]))
