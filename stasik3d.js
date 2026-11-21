@@ -217,13 +217,15 @@ export function mount({ canvas, emuFrame, onReady }) {
 
   // нажатия
   const held = [new Set(), new Set(), new Set()];
+  function press(i, on) {
+    keys[i].position.z = keys[i].userData.z - (on ? 0.6 : 0);
+    emu?.Module?._web_button?.(i, on ? 1 : 0);
+  }
   function setKey(i, src, down) {
     const was = held[i].size > 0;
     down ? held[i].add(src) : held[i].delete(src);
     const on = held[i].size > 0;
-    if (on === was) return;
-    keys[i].position.z = keys[i].userData.z - (on ? 0.6 : 0);
-    emu?.Module?._web_button?.(i, on ? 1 : 0);
+    if (on !== was) press(i, on);
   }
 
   const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
@@ -258,7 +260,8 @@ export function mount({ canvas, emuFrame, onReady }) {
     if (!e.repeat) setKey(i, 'k' + e.code, true);
   });
   canvas.addEventListener('keyup', (e) => { const i = KEYMAP[e.code]; if (i !== undefined) setKey(i, 'k' + e.code, false); });
-  canvas.addEventListener('blur', () => held.forEach((s, i) => { s.clear(); setKey(i, '', false); }));
+  // потеря фокуса с зажатой клавишей: отпустить кнопку (и в 3D, и в прошивке)
+  canvas.addEventListener('blur', () => held.forEach((s, i) => { if (s.size) { s.clear(); press(i, false); } }));
 
   // колесо листает страницу, а не приближает; на сенсорном экране свайп тоже листает — крутить только мышью
   controls.enableZoom = false;
