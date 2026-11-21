@@ -1,2 +1,12 @@
 .claude/
 .DS_Store
+# кэши и временное
+__pycache__/
+*.pyc
+*.glb
+# секреты прошивки сюда не попадают никогда (сборка emu/ — из secrets.example.h)
+.env
+.env.*
+.dev.vars
+secrets.h
+secrets_ota.ini
