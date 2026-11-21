@@ -116,6 +116,7 @@
   .cta:hover { background: var(--red-hover); }
   .links { margin: 28px 0 0; display: flex; gap: 24px; flex-wrap: wrap; font-size: 15px; font-weight: 600; }
   .links button { appearance: none; border: 0; padding: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+  .links button:disabled { cursor: progress; opacity: .7; }
   footer { margin-top: 96px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--soft); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 
   #emu { position: fixed; left: -10000px; top: 0; width: 480px; height: 640px; border: 0; }
@@ -250,12 +251,24 @@
   }, { rootMargin: '-45% 0px -45% 0px' });
   document.querySelectorAll('[data-pose]').forEach((s) => io.observe(s));
 
-  document.getElementById('glb').addEventListener('click', async () => {
-    const buf = await app.exportGLB();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([buf], { type: 'model/gltf-binary' }));
-    a.download = 'stasik.glb';
-    a.click();
+  const glb = document.getElementById('glb'), glbLabel = glb.textContent;
+  glb.addEventListener('click', async () => {
+    glb.disabled = true;
+    glb.textContent = 'Собираю модель…';
+    try {
+      const buf = await app.exportGLB();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'model/gltf-binary' }));
+      a.download = 'stasik.glb';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      glb.textContent = glbLabel;
+    } catch (e) {
+      console.error(e);
+      glb.textContent = 'Не получилось — попробуйте ещё раз';
+    } finally {
+      glb.disabled = false;
+    }
   });
 
   fetch('emu/VERSION').then((r) => r.ok ? r.text() : '').then((t) => {
